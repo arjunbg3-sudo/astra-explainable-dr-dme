@@ -1,0 +1,26 @@
+# MATLAB temporary files
+*.asv
+*.m~
+slprj/
+sccprj/
+codegen/
+*.mex*
+*.p
+*.autosave
+
+# MATLAB generated reports and caches
+*.log
+*.tmp
+
+# Python and editor caches
+__pycache__/
+*.py[cod]
+.vscode/
+.idea/
+
+# Local datasets — keep large images out of Git
+data/train_images/
+data/test_images/
+
+# Generated outputs — retain source code, not bulky results
+# outputs/
