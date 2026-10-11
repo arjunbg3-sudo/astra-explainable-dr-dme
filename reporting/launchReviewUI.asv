@@ -1,0 +1,631 @@
+function launchReviewUI()
+% DIABETIC RETINOPATHY SCREENING SYSTEM
+% AI-assisted fundus image analysis
+% Research prototype - not for clinical diagnosis
+
+%% ============================================================
+%  COLORS
+% =============================================================
+
+BG      = [0.055 0.070 0.090];
+PANEL   = [0.100 0.125 0.155];
+PANEL2  = [0.135 0.165 0.205];
+
+WHITE   = [0.95 0.97 1.00];
+GRAY    = [0.68 0.74 0.82];
+
+BLUE    = [0.15 0.55 0.95];
+GREEN   = [0.20 0.78 0.48];
+ORANGE  = [0.95 0.65 0.20];
+RED     = [0.92 0.28 0.30];
+
+%% ============================================================
+%  LOAD MODEL
+% =============================================================
+
+modelFile = fullfile( ...
+    "outputs", ...
+    "DR_ResNet50", ...
+    "DR_ResNet50_APTOS.mat");
+
+if ~isfile(modelFile)
+
+    tempFig = uifigure( ...
+        "Name","Model Error", ...
+        "Position",[500 400 400 200]);
+
+    uialert(tempFig, ...
+        "Model file was not found:" + newline + modelFile, ...
+        "Model Error");
+
+    return;
+end
+
+S = load(modelFile);
+
+% Find network automatically
+if isfield(S,"net")
+
+    net = S.net;
+
+elseif isfield(S,"trainedNet")
+
+    net = S.trainedNet;
+
+else
+
+    names = fieldnames(S);
+    found = false;
+
+    for k = 1:numel(names)
+
+        candidate = S.(names{k});
+
+        if isa(candidate,"dlnetwork")
+
+            net = candidate;
+            found = true;
+            break;
+
+        end
+
+    end
+
+    if ~found
+
+        error("Could not find a trained network in the MAT file.");
+
+    end
+
+end
+
+%% ============================================================
+%  MAIN WINDOW
+% =============================================================
+
+fig = uifigure( ...
+    "Name","Diabetic Retinopathy Screening System", ...
+    "Position",[80 40 1250 780], ...
+    "Color",BG);
+
+%% ============================================================
+%  HEADER
+% =============================================================
+
+uilabel(fig, ...
+    "Position",[35 720 900 35], ...
+    "Text","DIABETIC RETINOPATHY SCREENING SYSTEM", ...
+    "FontSize",24, ...
+    "FontWeight","bold", ...
+    "FontColor",WHITE);
+
+uilabel(fig, ...
+    "Position",[38 695 800 25], ...
+    "Text","AI-assisted fundus image analysis  |  Research Prototype", ...
+    "FontSize",13, ...
+    "FontColor",GRAY);
+
+%% ============================================================
+%  FUNDUS IMAGE PANEL
+% =============================================================
+
+imagePanel = uipanel(fig, ...
+    "Position",[25 190 560 480], ...
+    "Title","  FUNDUS IMAGE  ", ...
+    "BackgroundColor",PANEL, ...
+    "ForegroundColor",WHITE, ...
+    "FontSize",14, ...
+    "FontWeight","bold");
+
+ax = uiaxes(imagePanel, ...
+    "Position",[20 45 520 395], ...
+    "BackgroundColor",[0 0 0]);
+
+ax.XTick = [];
+ax.YTick = [];
+ax.Box = "on";
+
+% Initial placeholder
+placeholder = zeros(395,520,3);
+placeholder(:,:,1) = 0.025;
+placeholder(:,:,2) = 0.035;
+placeholder(:,:,3) = 0.050;
+
+imshow(placeholder,"Parent",ax);
+
+uilabel(imagePanel, ...
+    "Position",[130 10 300 25], ...
+    "Text","Load a retinal fundus image", ...
+    "FontSize",12, ...
+    "FontColor",GRAY, ...
+    "HorizontalAlignment","center");
+
+%% ============================================================
+%  AI RESULT PANEL
+% =============================================================
+
+resultPanel = uipanel(fig, ...
+    "Position",[610 425 615 245], ...
+    "Title","  AI SCREENING RESULT  ", ...
+    "BackgroundColor",PANEL, ...
+    "ForegroundColor",WHITE, ...
+    "FontSize",14, ...
+    "FontWeight","bold");
+
+uilabel(resultPanel, ...
+    "Position",[25 175 170 25], ...
+    "Text","Image Quality", ...
+    "FontSize",12, ...
+    "FontColor",GRAY);
+
+qualityValue = uilabel(resultPanel, ...
+    "Position",[220 175 350 25], ...
+    "Text","Waiting...", ...
+    "FontSize",13, ...
+    "FontWeight","bold", ...
+    "FontColor",WHITE);
+
+uilabel(resultPanel, ...
+    "Position",[25 135 170 25], ...
+    "Text","DR Grade", ...
+    "FontSize",12, ...
+    "FontColor",GRAY);
+
+gradeValue = uilabel(resultPanel, ...
+    "Position",[220 135 350 25], ...
+    "Text","--", ...
+    "FontSize",13, ...
+    "FontWeight","bold", ...
+    "FontColor",WHITE);
+
+uilabel(resultPanel, ...
+    "Position",[25 95 170 25], ...
+    "Text","Diagnosis", ...
+    "FontSize",12, ...
+    "FontColor",GRAY);
+
+diagValue = uilabel(resultPanel, ...
+    "Position",[220 95 350 25], ...
+    "Text","Waiting for analysis", ...
+    "FontSize",13, ...
+    "FontWeight","bold", ...
+    "FontColor",WHITE);
+
+uilabel(resultPanel, ...
+    "Position",[25 55 170 25], ...
+    "Text","Referable", ...
+    "FontSize",12, ...
+    "FontColor",GRAY);
+
+refValue = uilabel(resultPanel, ...
+    "Position",[220 55 350 25], ...
+    "Text","--", ...
+    "FontSize",13, ...
+    "FontWeight","bold", ...
+    "FontColor",WHITE);
+
+uilabel(resultPanel, ...
+    "Position",[25 15 170 25], ...
+    "Text","Model Confidence", ...
+    "FontSize",12, ...
+    "FontColor",GRAY);
+
+confValue = uilabel(resultPanel, ...
+    "Position",[220 15 350 25], ...
+    "Text","--", ...
+    "FontSize",13, ...
+    "FontWeight","bold", ...
+    "FontColor",WHITE);
+
+%% ============================================================
+%  HUMAN REVIEW PANEL
+% =============================================================
+
+reviewPanel = uipanel(fig, ...
+    "Position",[610 190 615 215], ...
+    "Title","  HUMAN-IN-THE-LOOP REVIEW  ", ...
+    "BackgroundColor",PANEL, ...
+    "ForegroundColor",WHITE, ...
+    "FontSize",14, ...
+    "FontWeight","bold");
+
+reviewStatus = uilabel(reviewPanel, ...
+    "Position",[25 155 550 28], ...
+    "Text","Reviewer decision: PENDING", ...
+    "FontSize",14, ...
+    "FontWeight","bold", ...
+    "FontColor",ORANGE);
+
+acceptBtn = uibutton(reviewPanel, ...
+    "Position",[35 85 250 50], ...
+    "Text","ACCEPT AI RESULT", ...
+    "FontSize",13, ...
+    "FontWeight","bold", ...
+    "BackgroundColor",GREEN, ...
+    "FontColor",[0.02 0.08 0.04], ...
+    "Enable","off");
+
+overrideBtn = uibutton(reviewPanel, ...
+    "Position",[320 85 250 50], ...
+    "Text","OVERRIDE RESULT", ...
+    "FontSize",13, ...
+    "FontWeight","bold", ...
+    "BackgroundColor",ORANGE, ...
+    "FontColor",[0.10 0.07 0.01], ...
+    "Enable","off");
+
+uilabel(reviewPanel, ...
+    "Position",[35 35 540 25], ...
+    "Text","Human review is required before any clinical decision.", ...
+    "FontSize",11, ...
+    "FontColor",GRAY, ...
+    "HorizontalAlignment","center");
+
+%% ============================================================
+%  BOTTOM BUTTONS
+% =============================================================
+
+loadBtn = uibutton(fig, ...
+    "Position",[25 105 270 55], ...
+    "Text","LOAD FUNDUS IMAGE", ...
+    "FontSize",14, ...
+    "FontWeight","bold", ...
+    "BackgroundColor",PANEL2, ...
+    "FontColor",WHITE);
+
+analyzeBtn = uibutton(fig, ...
+    "Position",[315 105 270 55], ...
+    "Text","ANALYZE IMAGE", ...
+    "FontSize",14, ...
+    "FontWeight","bold", ...
+    "BackgroundColor",BLUE, ...
+    "FontColor",WHITE);
+
+saveBtn = uibutton(fig, ...
+    "Position",[610 105 270 55], ...
+    "Text","SAVE REVIEW", ...
+    "FontSize",14, ...
+    "FontWeight","bold", ...
+    "BackgroundColor",PANEL2, ...
+    "FontColor",WHITE, ...
+    "Enable","off");
+
+statusLabel = uilabel(fig, ...
+    "Position",[900 115 320 35], ...
+    "Text","SYSTEM READY", ...
+    "FontSize",12, ...
+    "FontWeight","bold", ...
+    "FontColor",GREEN, ...
+    "HorizontalAlignment","center");
+
+%% ============================================================
+%  FOOTER
+% =============================================================
+
+uilabel(fig, ...
+    "Position",[25 45 1200 30], ...
+    "Text","RESEARCH PROTOTYPE  |  NOT FOR CLINICAL DIAGNOSIS", ...
+    "FontSize",11, ...
+    "FontWeight","bold", ...
+    "FontColor",GRAY, ...
+    "HorizontalAlignment","center");
+
+%% ============================================================
+%  INTERNAL STATE
+% =============================================================
+
+currentImage = [];
+currentPath = "";
+currentResult = [];
+reviewDecision = "PENDING";
+
+%% ============================================================
+%  BUTTON CALLBACKS
+% =============================================================
+
+loadBtn.ButtonPushedFcn = @loadImage;
+analyzeBtn.ButtonPushedFcn = @analyzeImage;
+acceptBtn.ButtonPushedFcn = @acceptResult;
+overrideBtn.ButtonPushedFcn = @overrideResult;
+saveBtn.ButtonPushedFcn = @saveReview;
+
+%% ============================================================
+%  LOAD IMAGE
+% =============================================================
+
+function loadImage(~,~)
+
+    [file,path] = uigetfile( ...
+        {'*.png;*.jpg;*.jpeg;*.tif;*.tiff','Fundus Images'}, ...
+        'Select Fundus Image');
+
+    if isequal(file,0)
+        return;
+    end
+
+    currentPath = fullfile(path,file);
+
+    currentImage = imread(currentPath);
+
+    imshow(currentImage,"Parent",ax);
+
+    qualityValue.Text = "Ready";
+    gradeValue.Text = "--";
+    diagValue.Text = "Not analyzed";
+    refValue.Text = "--";
+    confValue.Text = "--";
+
+    reviewDecision = "PENDING";
+
+    reviewStatus.Text = "Reviewer decision: PENDING";
+    reviewStatus.FontColor = ORANGE;
+
+    acceptBtn.Enable = "off";
+    overrideBtn.Enable = "off";
+    saveBtn.Enable = "off";
+
+    statusLabel.Text = "IMAGE LOADED";
+    statusLabel.FontColor = BLUE;
+
+end
+
+%% ============================================================
+%  ANALYZE IMAGE
+% =============================================================
+
+function analyzeImage(~,~)
+
+    if isempty(currentImage)
+
+        uialert(fig, ...
+            "Please load a fundus image first.", ...
+            "No Image");
+
+        return;
+
+    end
+
+    statusLabel.Text = "ANALYZING...";
+    statusLabel.FontColor = ORANGE;
+
+    drawnow;
+
+    try
+
+        %% Prepare image
+
+        img = currentImage;
+
+        % Grayscale -> RGB
+        if ndims(img) == 2
+            img = repmat(img,[1 1 3]);
+        end
+
+        % Remove alpha channel
+        if size(img,3) > 3
+            img = img(:,:,1:3);
+        end
+
+        % Resize to ResNet input
+        img = imresize(img,[224 224]);
+
+        % Convert to single precision
+        img = im2single(img);
+
+        % Create batch dimension
+        X = reshape(img,[224 224 3 1]);
+
+        %% Network prediction
+
+        scores = minibatchpredict(net,X);
+
+        %% Convert output to numeric
+
+        if iscell(scores)
+            scores = scores{1};
+        end
+
+        if isa(scores,"dlarray")
+            scores = extractdata(scores);
+        end
+
+        scores = gather(scores);
+
+        scores = squeeze(scores);
+
+        scores = double(scores(:));
+
+        %% Validate network output
+
+        if numel(scores) ~= 5
+
+            error( ...
+                "The network returned %d outputs. Expected 5 DR classes.", ...
+                numel(scores));
+
+        end
+
+        %% Convert logits to probabilities
+
+        if any(scores < 0) || abs(sum(scores)-1) > 0.01
+
+            scores = softmax(scores);
+
+        else
+
+            scores = scores ./ sum(scores);
+
+        end
+
+        %% Prediction
+
+        [confidence,predIdx] = max(scores);
+
+        classNames = { ...
+            "No DR", ...
+            "Mild NPDR", ...
+            "Moderate NPDR", ...
+            "Severe NPDR", ...
+            "Proliferative DR"};
+
+        grade = predIdx - 1;
+
+        diagnosis = classNames{predIdx};
+
+        % Project definition:
+        % DR Grade >= 2 is referable
+        referable = grade >= 2;
+
+        %% Display
+
+        qualityValue.Text = "Gradable";
+
+        gradeValue.Text = sprintf("%d",grade);
+
+        diagValue.Text = diagnosis;
+
+        confValue.Text = sprintf("%.2f%%", ...
+            confidence*100);
+
+        if referable
+
+            refValue.Text = "YES - REFER";
+            refValue.FontColor = RED;
+
+        else
+
+            refValue.Text = "NO";
+            refValue.FontColor = GREEN;
+
+        end
+
+        %% Save current result
+
+        currentResult = struct( ...
+            "imagePath",currentPath, ...
+            "drGrade",grade, ...
+            "diagnosis",diagnosis, ...
+            "referable",referable, ...
+            "confidence",confidence, ...
+            "scores",scores);
+
+        reviewDecision = "PENDING";
+
+        reviewStatus.Text = ...
+            "Reviewer decision: PENDING";
+
+        reviewStatus.FontColor = ORANGE;
+
+        acceptBtn.Enable = "on";
+        overrideBtn.Enable = "on";
+        saveBtn.Enable = "on";
+
+        statusLabel.Text = "ANALYSIS COMPLETE";
+        statusLabel.FontColor = GREEN;
+
+    catch ME
+
+        statusLabel.Text = "ANALYSIS FAILED";
+        statusLabel.FontColor = RED;
+
+        uialert(fig, ...
+            ME.message, ...
+            "Analysis Error");
+
+    end
+
+end
+
+%% ============================================================
+%  ACCEPT RESULT
+% =============================================================
+
+function acceptResult(~,~)
+
+    reviewDecision = "ACCEPTED";
+
+    reviewStatus.Text = ...
+        "Reviewer decision: ACCEPTED";
+
+    reviewStatus.FontColor = GREEN;
+
+    statusLabel.Text = "REVIEW ACCEPTED";
+    statusLabel.FontColor = GREEN;
+
+end
+
+%% ============================================================
+%  OVERRIDE RESULT
+% =============================================================
+
+function overrideResult(~,~)
+
+    choices = { ...
+        "No DR (Grade 0)", ...
+        "Mild NPDR (Grade 1)", ...
+        "Moderate NPDR (Grade 2)", ...
+        "Severe NPDR (Grade 3)", ...
+        "Proliferative DR (Grade 4)"};
+
+    [idx,ok] = listdlg( ...
+        "PromptString","Select reviewer diagnosis:", ...
+        "SelectionMode","single", ...
+        "ListString",choices, ...
+        "ListSize",[300 180]);
+
+    if ~ok
+        return;
+    end
+
+    reviewDecision = "OVERRIDE";
+
+    reviewStatus.Text = ...
+        sprintf("Reviewer decision: OVERRIDE -> Grade %d",idx-1);
+
+    reviewStatus.FontColor = ORANGE;
+
+    statusLabel.Text = "REVIEW OVERRIDE RECORDED";
+    statusLabel.FontColor = ORANGE;
+
+end
+
+%% ============================================================
+%  SAVE REVIEW
+% =============================================================
+
+function saveReview(~,~)
+
+    if isempty(currentResult)
+        return;
+    end
+
+    outDir = fullfile("outputs","reviews");
+
+    if ~exist(outDir,"dir")
+        mkdir(outDir);
+    end
+
+    timestamp = datestr(now,"yyyymmdd_HHMMSS");
+
+    review = currentResult;
+
+    review.reviewerDecision = reviewDecision;
+
+    review.timestamp = datetime("now");
+
+    filename = fullfile( ...
+        outDir, ...
+        "review_" + timestamp + ".mat");
+
+    save(filename,"review");
+
+    statusLabel.Text = "REVIEW SAVED";
+    statusLabel.FontColor = GREEN;
+
+    uialert(fig, ...
+        "Review saved successfully.", ...
+        "Saved");
+
+end
+
+end
